@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Mega Dark Dome Collapse & Pilgrimage XR</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #03060f;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body class="relative text-slate-100">
+
+  <!-- HUD Control Panel -->
+  <header class="absolute top-4 left-4 z-30 pointer-events-none flex flex-col gap-2">
+    <div class="bg-black/85 backdrop-blur-md border border-amber-500/40 p-4 rounded-xl shadow-2xl max-w-sm pointer-events-auto transition-all">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+        <h1 class="text-sm font-bold tracking-wide uppercase text-amber-200">거대 암흑 돔 붕괴 & 성소 XR</h1>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed mb-3">
+        제1 관찰자가 돔 천장을 무작위 폭격하여 패널을 파괴하고, 돔이 붕괴되면서 외곽의 우주 은하가 드러납니다.
+      </p>
+
+      <!-- Action Buttons & HUD -->
+      <div class="flex flex-col gap-2 text-xs">
+        <label class="cursor-pointer bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-medium py-2 px-3 rounded-lg text-center shadow-lg transition flex items-center justify-center gap-1.5">
+          <span>📁 내 MP4/실제 비디오 전사 업로드</span>
+          <input type="file" id="video-input" accept="video/mp4,video/webm,video/quicktime" class="hidden">
+        </label>
+        
+        <button id="toggle-screen-btn" class="bg-slate-800/90 hover:bg-slate-700 text-amber-200 border border-amber-500/50 px-3 py-1.5 rounded-lg font-medium transition text-left flex items-center justify-between">
+          <span>🎬 배경 거대 시네마 곡면 스크린</span>
+          <span id="screen-status-badge" class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/30 text-emerald-300 border border-emerald-500/50">ON</span>
+        </button>
+
+        <!-- 돔 내구도 및 사격 컨트롤 -->
+        <div class="bg-slate-900/90 border border-amber-500/40 rounded-lg p-2.5 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
+              돔 내구도 (Integrity)
+            </span>
+            <span id="dome-health-text" class="text-[11px] font-bold text-amber-300">100% (112 패널)</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+            <div id="dome-health-bar" class="bg-gradient-to-r from-amber-500 to-red-500 h-full w-full transition-all duration-300"></div>
+          </div>
+          <button id="shoot-dome-btn" class="mt-1 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-950 font-bold py-1.5 px-2 rounded text-[11px] shadow transition active:scale-95 text-center">
+            ⚡ 돔 천장 폭격 (PC: Space / 클릭 | VR: 트리거)
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-1.5 pt-1">
+          <button id="cam-preset-1" class="bg-slate-800/80 hover:bg-amber-600/50 text-slate-200 border border-slate-700 px-2 py-1.5 rounded text-[11px] transition text-center">
+            🔭 제1관찰자 뒤 조망
+          </button>
+          <button id="cam-preset-2" class="bg-slate-800/80 hover:bg-amber-600/50 text-slate-200 border border-slate-700 px-2 py-1.5 rounded text-[11px] transition text-center">
+            🪐 돔 고공 원경 (Top)
+          </button>
+        </div>
+      </div>
+
+      <!-- VR Controls Guide -->
+      <div class="mt-2.5 pt-2.5 border-t border-slate-700/60 text-[11px] text-slate-300 space-y-1">
+        <p class="text-slate-400 leading-normal">
+          • <span class="text-amber-200">VR 좌/우 트리거 (화면 클릭/스페이스)</span>: 돔 천장 모듈 무작위 폭파 타격<br>
+          • <span class="text-amber-200">왼손 썸스틱</span>: 앞/뒤 근접/원경, 좌/우 이동<br>
+          • <span class="text-amber-200">오른손 썸스틱</span>: 상/하 고도 조절, 좌/우 360° 시점 선회
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Video Element for Texture Mapping -->
+  <video id="video-source" loop muted playsinline crossOrigin="anonymous" style="display:none;"></video>
+
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x040814); // 암전 방지: 깊이감 있는 딥 코스믹 네이비
+    scene.fog = new THREE.FogExp2(0x050a18, 0.0022); // 부드러운 안개로 원경 소실 방지
+
+    // Camera Rig 시스템: 제2 관찰자(사용자) 시점
+    const cameraRig = new THREE.Group();
+    cameraRig.position.set(0, 4.5, 28); // 제1 관찰자 뒤편의 이상적인 조망 위치
+    scene.add(cameraRig);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 800);
+    cameraRig.add(camera);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.35;
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // PC/모바일 환경용 OrbitControls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 + 0.03;
+    controls.minDistance = 2;
+    controls.maxDistance = 160;
+    controls.target.set(0, 5, 4);
+
+    // 전방위 반구 조명 (어느 각도를 보더라도 물체의 형태와 볼륨이 보이도록 보장)
+    const hemiLight = new THREE.HemisphereLight(0x5588cc, 0x1a2233, 1.4);
+    scene.add(hemiLight);
+
+    const sanctuaryAmbient = new THREE.AmbientLight(0xfff5ea, 1.3);
+    scene.add(sanctuaryAmbient);
+
+    // 오벨리스크 및 성소 주 조명
+    const obeliskSpot1 = new THREE.DirectionalLight(0xfff6dd, 2.8);
+    obeliskSpot1.position.set(22, 38, 28);
+    obeliskSpot1.target.position.set(0, 15, 0);
+    scene.add(obeliskSpot1);
+    scene.add(obeliskSpot1.target);
+
+    const obeliskSpot2 = new THREE.DirectionalLight(0x7095cc, 1.5);
+    obeliskSpot2.position.set(-25, 24, -20);
+    scene.add(obeliskSpot2);
+
+    // 돔 너머에 숨겨진 광활한 우주 은하 성운 (돔이 무너지면 완전 노출)
+    const starCount = 2200;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    const starColors = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i += 3) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      const r = 120 + Math.random() * 60;
+      starPos[i] = r * Math.sin(phi) * Math.cos(theta);
+      starPos[i + 1] = Math.abs(r * Math.cos(phi)) + 12;
+      starPos[i + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+      // 다채로운 별빛 색상
+      const cType = Math.random();
+      if (cType > 0.6) {
+        starColors[i] = 0.65; starColors[i+1] = 0.85; starColors[i+2] = 1.0; // 시안/블루
+      } else if (cType > 0.3) {
+        starColors[i] = 1.0; starColors[i+1] = 0.95; starColors[i+2] = 0.75; // 골드
+      } else {
+        starColors[i] = 1.0; starColors[i+1] = 1.0; starColors[i+2] = 1.0; // 화이트
+      }
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+    const starMat = new THREE.PointsMaterial({
+      size: 1.4,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95
+    });
+    const starField = new THREE.Points(starGeo, starMat);
+    scene.add(starField);
+
+    const domeGroup = new THREE.Group();
+    scene.add(domeGroup);
+
+    const domeRadius = 85;
+    const domeRows = 7;
+    const domeCols = 16;
+    const domePanels = [];
+    let destroyedPanelCount = 0;
+    const totalPanels = domeRows * domeCols;
+
+    for (let r = 0; r < domeRows; r++) {
+      const phiStart = (r / domeRows) * (Math.PI * 0.46);
+      const phiLength = (1 / domeRows) * (Math.PI * 0.46);
+
+      for (let c = 0; c < domeCols; c++) {
+        const thetaStart = (c / domeCols) * (Math.PI * 2);
+        const thetaLength = (1 / domeCols) * (Math.PI * 2);
+
+        const panelGeo = new THREE.SphereGeometry(
+          domeRadius, 6, 4,
+          thetaStart, thetaLength,
+          phiStart, phiLength
+        );
+        panelGeo.scale(-1, 1, 1);
+
+        // 은은한 메탈릭 광택이 있어 칠흑 속에서도 패널의 아키텍처가 식별됨
+        const panelMat = new THREE.MeshStandardMaterial({
+          color: 0x111827,
+          roughness: 0.65,
+          metalness: 0.35,
+          side: THREE.DoubleSide
+        });
+
+        const panelMesh = new THREE.Mesh(panelGeo, panelMat);
+        
+        // 패널 중심점 계산
+        const midTheta = thetaStart + thetaLength / 2;
+        const midPhi = phiStart + phiLength / 2;
+        const centerPos = new THREE.Vector3(
+          domeRadius * Math.sin(midPhi) * Math.sin(midTheta),
+          domeRadius * Math.cos(midPhi),
+          domeRadius * Math.sin(midPhi) * Math.cos(midTheta)
+        );
+
+        panelMesh.userData = {
+          center: centerPos,
+          isDestroyed: false,
+          velocity: new THREE.Vector3(),
+          rotVel: new THREE.Vector3(),
+          life: 1.0
+        };
+
+        domeGroup.add(panelMesh);
+        domePanels.push(panelMesh);
+      }
+    }
+
+    // 돔 하단 흑요석 바닥 및 동심원 발광 룬 링 (공간감 확보)
+    const domeFloorGeo = new THREE.CircleGeometry(domeRadius, 64);
+    const domeFloorMat = new THREE.MeshStandardMaterial({ 
+      color: 0x080e1b, 
+      roughness: 0.75, 
+      metalness: 0.25 
+    });
+    const domeFloor = new THREE.Mesh(domeFloorGeo, domeFloorMat);
+    domeFloor.rotation.x = -Math.PI / 2;
+    domeFloor.position.y = -0.05;
+    scene.add(domeFloor);
+
+    // 바닥 룬 링 (사용자가 어디에 서 있는지 바닥 위치를 명확히 인지하게 함)
+    for (let ri = 1; ri <= 3; ri++) {
+      const ringGeo = new THREE.RingGeometry(ri * 18, ri * 18 + 0.3, 64);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x1e3a6a, side: THREE.DoubleSide, transparent: true, opacity: 0.45 });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.rotation.x = -Math.PI / 2;
+      ringMesh.position.y = 0.02;
+      scene.add(ringMesh);
+    }
+
+    const sanctuaryGroup = new THREE.Group();
+    scene.add(sanctuaryGroup);
+
+    const stageRadius = 22;
+    const stageGeo = new THREE.CylinderGeometry(stageRadius, stageRadius + 1.2, 0.8, 64);
+    const stageMat = new THREE.MeshStandardMaterial({ color: 0x1d2433, roughness: 0.65, metalness: 0.25 });
+    const stageMesh = new THREE.Mesh(stageGeo, stageMat);
+    stageMesh.position.y = 0.4;
+    sanctuaryGroup.add(stageMesh);
+
+    // 오벨리스크 그룹
+    const obeliskGroup = new THREE.Group();
+    obeliskGroup.position.set(0, 0, 0);
+    sanctuaryGroup.add(obeliskGroup);
+
+    // 웜 아이보리 대리석 거대 오벨리스크 본체 (미세 자체발광 포함)
+    const obeliskMat = new THREE.MeshStandardMaterial({
+      color: 0xfff6dd,
+      emissive: 0x1a1508,
+      roughness: 0.3,
+      metalness: 0.1
+    });
+    const obeliskHeight = 32;
+    const obeliskMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.6, 2.8, obeliskHeight, 4),
+      obeliskMat
+    );
+    obeliskMesh.position.y = obeliskHeight / 2 + 1.0;
+    obeliskMesh.rotation.y = Math.PI / 4;
+    obeliskGroup.add(obeliskMesh);
+
+    // 꼭대기 금빛 피라미디온
+    const pyramidionMesh = new THREE.Mesh(
+      new THREE.ConeGeometry(2.26, 3.2, 4),
+      new THREE.MeshStandardMaterial({ color: 0xf5d36e, emissive: 0x221a04, roughness: 0.2, metalness: 0.7 })
+    );
+    pyramidionMesh.position.y = obeliskHeight + 2.6;
+    pyramidionMesh.rotation.y = Math.PI / 4;
+    obeliskGroup.add(pyramidionMesh);
+
+    // 수직 거대 레이저 광선
+    const laserBeamGeo = new THREE.CylinderGeometry(0.5, 0.9, 120, 16, 1, true);
+    const laserBeamMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    const verticalLaser = new THREE.Mesh(laserBeamGeo, laserBeamMat);
+    verticalLaser.position.y = 70;
+    obeliskGroup.add(verticalLaser);
+
+    // 3줄기 플라즈마 볼텍스 리본
+    const vortexGroup = new THREE.Group();
+    obeliskGroup.add(vortexGroup);
+    for (let s = 0; s < 3; s++) {
+      const pts = [];
+      const phase = (s * Math.PI * 2) / 3;
+      for (let t = 0; t <= 36; t += 0.5) {
+        const rad = 3.2 + Math.sin(t * 0.15) * 1.2 + t * 0.05;
+        pts.push(new THREE.Vector3(Math.cos(t * 1.8 + phase) * rad, t + 1.0, Math.sin(t * 1.8 + phase) * rad));
+      }
+      const tubeGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 140, 0.2, 8, false);
+      const tubeMesh = new THREE.Mesh(tubeGeo, new THREE.MeshBasicMaterial({ color: 0x00f7ff, transparent: true, opacity: 0.8 }));
+      vortexGroup.add(tubeMesh);
+    }
+
+    const crowdGroup = new THREE.Group();
+    sanctuaryGroup.add(crowdGroup);
+
+    const pilgrimColors = [0x1e3a8a, 0x881337, 0x065f46, 0x9a3412, 0x334155, 0x581c87];
+    const pilgrimObjects = [];
+    const numPilgrims = 200;
+
+    const headGeo = new THREE.SphereGeometry(0.16, 10, 10);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xc89870 });
+    const torsoGeo = new THREE.CylinderGeometry(0.2, 0.26, 0.85, 10);
+    const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.65, 6);
+
+    for (let i = 0; i < numPilgrims; i++) {
+      const pGroup = new THREE.Group();
+      const track = i % 4;
+      const isInner = track < 2;
+      const direction = isInner ? 1 : -1;
+      const radius = isInner ? (14.0 + track * 2.2) : (18.8 + (track - 2) * 2.0);
+      const angle = (i / numPilgrims) * Math.PI * 2;
+
+      const robeMat = new THREE.MeshStandardMaterial({ color: pilgrimColors[i % pilgrimColors.length] });
+      const torso = new THREE.Mesh(torsoGeo, robeMat);
+      torso.position.y = 0.9;
+      pGroup.add(torso);
+
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 1.45;
+      pGroup.add(head);
+
+      const leftLeg = new THREE.Mesh(legGeo, robeMat);
+      leftLeg.position.set(-0.1, 0.35, 0);
+      pGroup.add(leftLeg);
+
+      const rightLeg = new THREE.Mesh(legGeo, robeMat);
+      rightLeg.position.set(0.1, 0.35, 0);
+      pGroup.add(rightLeg);
+
+      pGroup.userData = {
+        radius, angle, direction,
+        speed: 0.6 + Math.random() * 0.4,
+        leftLeg, rightLeg
+      };
+      crowdGroup.add(pGroup);
+      pilgrimObjects.push(pGroup);
+    }
+
+    const observerTerrace = new THREE.Group();
+    observerTerrace.position.set(0, 0, 24);
+    scene.add(observerTerrace);
+
+    // 순백색 마블 테라스 데크
+    const terraceFloor = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.9, 2.0, 0.3, 32),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1 })
+    );
+    terraceFloor.position.y = 0.15;
+    observerTerrace.add(terraceFloor);
+
+    // 테라스 전용 웜 골드 스포트라이트 (관찰자와 데크를 화사하게 비춤)
+    const terraceLight = new THREE.PointLight(0xffeedd, 2.2, 14);
+    terraceLight.position.set(0, 4.0, 0);
+    observerTerrace.add(terraceLight);
+
+    // 관찰자 의자 & 본체 피규어
+    const obsChair = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x1f2937 }));
+    obsChair.position.set(0, 0.45, 0);
+    observerTerrace.add(obsChair);
+
+    const observerGroup = new THREE.Group();
+    observerGroup.position.set(0, 0.45, 0);
+    observerTerrace.add(observerGroup);
+
+    const torsoGroup = new THREE.Group();
+    torsoGroup.position.set(0, 0.82, 0);
+    observerGroup.add(torsoGroup);
+
+    const obsTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.75, 12), new THREE.MeshStandardMaterial({ color: 0x1e3a8a }));
+    torsoGroup.add(obsTorso);
+
+    const headGroup = new THREE.Group();
+    headGroup.position.set(0, 0.55, 0);
+    torsoGroup.add(headGroup);
+
+    const obsHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), new THREE.MeshStandardMaterial({ color: 0xf5d0b0 }));
+    headGroup.add(obsHead);
+
+    const armRMesh = new THREE.Group();
+    armRMesh.position.set(0.32, 0.2, 0);
+    torsoGroup.add(armRMesh);
+
+    const obsArmUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x1e3a8a }));
+    obsArmUpper.position.y = -0.22;
+    armRMesh.add(obsArmUpper);
+
+    const handR = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), new THREE.MeshStandardMaterial({ color: 0xf5d0b0 }));
+    handR.position.set(0, -0.48, 0.12);
+    armRMesh.add(handR);
+
+    let audioCtx = null;
+    let cameraShakeIntensity = 0;
+    let laserRayLife = 0;
+
+    const laserRayGeo = new THREE.CylinderGeometry(0.09, 0.09, 1, 10);
+    laserRayGeo.translate(0, 0.5, 0);
+    const laserRayMat = new THREE.MeshBasicMaterial({ color: 0xffea00, transparent: true, opacity: 0.95 });
+    const laserBeamMesh = new THREE.Mesh(laserRayGeo, laserRayMat);
+    laserBeamMesh.visible = false;
+    scene.add(laserBeamMesh);
+
+    // 낙하 중인 돔 파편 관리
+    const fallingPanels = [];
+
+    // 포격 효과음 (Web Audio API)
+    function playCannonSound() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(480, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(35, audioCtx.currentTime + 0.45);
+        gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.45);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.45);
+      } catch (e) {}
+    }
+
+    const healthText = document.getElementById('dome-health-text');
+    const healthBar = document.getElementById('dome-health-bar');
+
+    function shootAtDome() {
+      // 아직 파괴되지 않은 패널 찾기
+      const intactPanels = domePanels.filter(p => !p.userData.isDestroyed);
+      if (intactPanels.length === 0) return;
+
+      // 무작위 패널 선정
+      const targetPanel = intactPanels[Math.floor(Math.random() * intactPanels.length)];
+      targetPanel.userData.isDestroyed = true;
+      destroyedPanelCount++;
+
+      // 레이저 광선 정렬
+      const startPos = new THREE.Vector3();
+      handR.getWorldPosition(startPos);
+      const targetPos = targetPanel.userData.center.clone();
+
+      const diff = new THREE.Vector3().subVectors(targetPos, startPos);
+      const dist = diff.length();
+
+      laserBeamMesh.position.copy(startPos).addScaledVector(diff, 0.5);
+      laserBeamMesh.scale.set(1, dist, 1);
+      laserBeamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), diff.clone().normalize());
+      laserBeamMesh.visible = true;
+      laserRayLife = 0.25;
+
+      // 발사 제스처 및 카메라 흔들림
+      armRMesh.rotation.x = -0.5;
+      setTimeout(() => { armRMesh.rotation.x = 0.3; }, 160);
+      cameraShakeIntensity = 0.08;
+      playCannonSound();
+
+      // 피격된 패널 파괴 연출: 고열 발광 후 바닥으로 낙하
+      targetPanel.material.color.setHex(0xffaa22);
+      targetPanel.material.emissive.setHex(0xff5500);
+
+      targetPanel.userData.velocity.set(
+        (Math.random() - 0.5) * 8.0,
+        -5 - Math.random() * 8.0,
+        (Math.random() - 0.5) * 8.0
+      );
+      targetPanel.userData.rotVel.set(
+        (Math.random() - 0.5) * 2.0,
+        (Math.random() - 0.5) * 2.0,
+        (Math.random() - 0.5) * 2.0
+      );
+      fallingPanels.push(targetPanel);
+
+      // HUD 내구도 갱신
+      const remainingPct = Math.max(0, Math.round(((totalPanels - destroyedPanelCount) / totalPanels) * 100));
+      healthText.textContent = `${remainingPct}% (${totalPanels - destroyedPanelCount} 패널)`;
+      healthBar.style.width = `${remainingPct}%`;
+
+      // 40% 이하 시 대붕괴 (Catastrophic Collapse)
+      if (remainingPct <= 40) {
+        intactPanels.slice(0, 4).forEach(p => {
+          if (!p.userData.isDestroyed) {
+            p.userData.isDestroyed = true;
+            p.material.color.setHex(0xff7733);
+            p.userData.velocity.set((Math.random() - 0.5) * 12, -10 - Math.random() * 10, (Math.random() - 0.5) * 12);
+            p.userData.rotVel.set((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3);
+            fallingPanels.push(p);
+          }
+        });
+      }
+    }
+
+    // 발사 이벤트 바인딩
+    document.getElementById('shoot-dome-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      shootAtDome();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') shootAtDome();
+    });
+
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('header') || e.target.closest('button') || e.target.closest('label')) return;
+      shootAtDome();
+    });
+
+    // 전방 곡면 시네마 스크린
+    const screenGeo = new THREE.CylinderGeometry(38, 38, 16, 64, 1, true, -Math.PI * 0.36, Math.PI * 0.72);
+    screenGeo.scale(-1, 1, 1);
+    const screenMat = new THREE.MeshBasicMaterial({ color: 0x16263d, side: THREE.DoubleSide });
+    const curvedScreen = new THREE.Mesh(screenGeo, screenMat);
+    curvedScreen.position.set(0, 13, -4);
+    curvedScreen.rotation.y = Math.PI;
+    scene.add(curvedScreen);
+
+    // 사용자 비디오 파일 업로드
+    const videoElem = document.getElementById('video-source');
+    document.getElementById('video-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const fileUrl = URL.createObjectURL(file);
+        videoElem.src = fileUrl;
+        videoElem.play();
+        const videoTex = new THREE.VideoTexture(videoElem);
+        screenMat.map = videoTex;
+        screenMat.color.setHex(0xffffff);
+        screenMat.needsUpdate = true;
+      }
+    });
+
+    // 스크린 ON/OFF 토글
+    let isScreenOn = true;
+    document.getElementById('toggle-screen-btn').addEventListener('click', () => {
+      isScreenOn = !isScreenOn;
+      curvedScreen.visible = isScreenOn;
+      const badge = document.getElementById('screen-status-badge');
+      badge.textContent = isScreenOn ? 'ON' : 'OFF';
+      badge.className = isScreenOn 
+        ? 'px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
+        : 'px-1.5 py-0.5 rounded text-[10px] bg-rose-500/30 text-rose-300 border border-rose-500/50';
+    });
+
+    // 시점 프리셋
+    document.getElementById('cam-preset-1').addEventListener('click', () => {
+      cameraRig.position.set(0, 4.5, 28);
+      cameraRig.rotation.set(0, 0, 0);
+      controls.target.set(0, 6, 0);
+    });
+    document.getElementById('cam-preset-2').addEventListener('click', () => {
+      cameraRig.position.set(0, 26, 52);
+      cameraRig.rotation.set(0, 0, 0);
+      controls.target.set(0, 10, 10);
+    });
+
+    function setupVRButton() {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:14px 32px;background:linear-gradient(135deg,#d97706,#b45309);color:#fff;border-radius:9999px;border:2px solid #fbbf24;font-weight:bold;cursor:pointer;z-index:999;box-shadow:0 0 25px rgba(245,158,11,0.5);font-size:15px;letter-spacing:1px;';
+      btn.textContent = '🌌 ENTER VR';
+
+      if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+          if (supported) {
+            btn.onclick = async () => {
+              try {
+                const sessionInit = { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] };
+                const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+
+                // VR 진입 시 OrbitControls 간섭을 방지하고 카메라를 깔끔하게 정렬
+                controls.enabled = false;
+                camera.position.set(0, 0, 0);
+                camera.quaternion.identity();
+                camera.rotation.set(0, 0, 0);
+
+                // 제1 관찰자가 정면에 보이고 성소가 한눈에 들어오는 최적 위치와 각도 세팅
+                cameraRig.position.set(0, 4.5, 28);
+                cameraRig.rotation.set(0, 0, 0);
+
+                renderer.xr.setReferenceSpaceType('local-floor');
+                await renderer.xr.setSession(session);
+
+                session.addEventListener('end', () => {
+                  controls.enabled = true;
+                  cameraRig.position.set(0, 4.5, 28);
+                  controls.target.set(0, 5, 4);
+                });
+              } catch (err) {
+                console.error("WebXR 세션 시작 실패:", err);
+              }
+            };
+          } else {
+            btn.textContent = '3D 뷰어 모드 (VR 미지원 기기)';
+          }
+        });
+      } else {
+        btn.textContent = 'WebXR 미지원 브라우저';
+      }
+      document.body.appendChild(btn);
+    }
+    setupVRButton();
+
+    const keysPressed = {};
+    window.addEventListener('keydown', (e) => { keysPressed[e.code] = true; });
+    window.addEventListener('keyup', (e) => { keysPressed[e.code] = false; });
+    let leftTriggerPressed = false;
+
+    function handleLocomotion(delta) {
+      let moveForward = 0, moveRight = 0, rotateYaw = 0;
+      const session = renderer.xr.getSession();
+
+      if (session) {
+        for (const source of session.inputSources) {
+          if (source && source.gamepad) {
+            const axes = source.gamepad.axes;
+            const buttons = source.gamepad.buttons;
+
+            // 트리거 발사
+            const isDown = buttons[0] && buttons[0].pressed;
+            if (isDown && !leftTriggerPressed) {
+              shootAtDome();
+              leftTriggerPressed = true;
+            } else if (!isDown) {
+              leftTriggerPressed = false;
+            }
+
+            // 썸스틱 데드존 필터링
+            const x = Math.abs(axes[2]) > 0.15 ? axes[2] : (Math.abs(axes[0]) > 0.15 ? axes[0] : 0);
+            const y = Math.abs(axes[3]) > 0.15 ? axes[3] : (Math.abs(axes[1]) > 0.15 ? axes[1] : 0);
+
+            if (source.handedness === 'left') {
+              moveForward -= y; moveRight += x;
+            } else if (source.handedness === 'right') {
+              rotateYaw -= x; cameraRig.position.y += -y * delta * 7.5;
+            }
+          }
+        }
+      }
+
+      if (keysPressed['KeyW'] || keysPressed['ArrowUp']) moveForward += 1;
+      if (keysPressed['KeyS'] || keysPressed['ArrowDown']) moveForward -= 1;
+      if (keysPressed['KeyA']) moveRight -= 1;
+      if (keysPressed['KeyD']) moveRight += 1;
+      if (keysPressed['KeyQ'] || keysPressed['ArrowLeft']) rotateYaw += 1;
+      if (keysPressed['KeyE'] || keysPressed['ArrowRight']) rotateYaw -= 1;
+
+      if (rotateYaw !== 0) cameraRig.rotation.y += rotateYaw * delta * 1.6;
+      if (moveForward !== 0 || moveRight !== 0) {
+        const speed = 12.0 * delta;
+        const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraRig.rotation.y);
+        const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraRig.rotation.y);
+        cameraRig.position.addScaledVector(forward, moveForward * speed);
+        cameraRig.position.addScaledVector(right, moveRight * speed);
+        cameraRig.position.y = Math.max(1.4, cameraRig.position.y);
+      }
+    }
+
+    const clock = new THREE.Clock();
+
+    renderer.setAnimationLoop(() => {
+      const delta = Math.min(clock.getDelta(), 0.1);
+      const elapsed = clock.getElapsedTime();
+
+      handleLocomotion(delta);
+
+      // 카메라 쉐이크 (피격 진동)
+      if (cameraShakeIntensity > 0.001) {
+        camera.position.x = (Math.random() - 0.5) * cameraShakeIntensity;
+        camera.position.y = (Math.random() - 0.5) * cameraShakeIntensity;
+        cameraShakeIntensity *= 0.9;
+      } else if (!renderer.xr.isPresenting) {
+        camera.position.set(0, 0, 0);
+      }
+
+      // 레이저 빔 소멸 수명
+      if (laserRayLife > 0) {
+        laserRayLife -= delta;
+        laserRayMat.opacity = Math.max(0, laserRayLife / 0.25);
+        if (laserRayLife <= 0) laserBeamMesh.visible = false;
+      }
+
+      // 낙하 중인 돔 패널 물리 계산
+      for (let i = fallingPanels.length - 1; i >= 0; i--) {
+        const p = fallingPanels[i];
+        p.userData.velocity.y -= 9.8 * delta; // 중력
+        p.position.addScaledVector(p.userData.velocity, delta);
+        p.rotation.x += p.userData.rotVel.x * delta;
+        p.rotation.y += p.userData.rotVel.y * delta;
+        p.rotation.z += p.userData.rotVel.z * delta;
+
+        // 바닥 충돌 시 정지 및 서서히 페이드
+        if (p.position.y + p.userData.center.y < 0.2) {
+          p.userData.velocity.set(0, 0, 0);
+          p.userData.rotVel.set(0, 0, 0);
+          p.userData.life -= delta * 0.4;
+          p.scale.setScalar(Math.max(0.01, p.userData.life));
+          if (p.userData.life <= 0) {
+            domeGroup.remove(p);
+            fallingPanels.splice(i, 1);
+          }
+        }
+      }
+
+      // 순례자 보행 (안쪽 트랙: 시계방향, 바깥쪽 트랙: 반시계방향)
+      for (let i = 0; i < pilgrimObjects.length; i++) {
+        const p = pilgrimObjects[i];
+        p.userData.angle += p.userData.direction * p.userData.speed * 0.024;
+        p.position.x = Math.cos(p.userData.angle) * p.userData.radius;
+        p.position.z = Math.sin(p.userData.angle) * p.userData.radius;
+        p.position.y = 0.8;
+        p.rotation.y = (p.userData.direction === 1) ? (-p.userData.angle - Math.PI / 2) : (-p.userData.angle + Math.PI / 2);
+
+        const walk = Math.sin(elapsed * 5.0);
+        p.userData.leftLeg.rotation.x = walk * 0.5;
+        p.userData.rightLeg.rotation.x = -walk * 0.5;
+      }
+
+      // 볼텍스 고속 회전 및 별빛 미세 회전
+      vortexGroup.rotation.y = elapsed * 2.8;
+      starField.rotation.y = elapsed * 0.012;
+
+      // 데스크톱 모드일 때만 OrbitControls 갱신 (VR 모드에서는 비활성화하여 시점 왜곡 방지)
+      if (!renderer.xr.isPresenting) {
+        controls.update();
+      }
+
+      renderer.render(scene, camera);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
